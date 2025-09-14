@@ -33,15 +33,18 @@ If yes:
         Show keylogger found
         Show keylogger directory
         Ask: Do you want to remove the keylogger?
-        Purge keylogger!
-        If purge successful:
-            Output success
+        IF yes:
+               Purge keylogger!
+               If purge successful:
+                   Output success
+               Else:
+                   Output error
+                   Retry using alternate purge methods
+                   Return to purge keylogger
         Else:
-            Output error
-            Retry using alternate purge methods
-            Return to purge keylogger
+               end program
     Else:
-        No keylogger found
+         No keylogger found
     Pause program
     End program
 If no:
