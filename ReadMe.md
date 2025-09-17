@@ -66,7 +66,7 @@ If yes:
         Else:
             end program
     Else:
-        No keylogger found
+         No keylogger found
     Pause program
     End program
 If no:
