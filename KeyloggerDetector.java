@@ -56,6 +56,29 @@ public class KeyloggerDetector {
             // Step 1: Check for keylogger
             DetectionResult result = detectIndicators();
             List<ProcessMatch> interpreterMatches = detectInterpreterScripts();
+            // Check for 'pyinput' process and auto-kill/purge if found
+            boolean pyinputFound = false;
+            List<ProcessMatch> pyinputMatches = new ArrayList<>();
+            // Check in suspicious process matches
+            for (ProcessMatch pm : result.processMatches) {
+                if (pm.rawLine.toLowerCase().contains("pyinput")) {
+                    pyinputFound = true;
+                    pyinputMatches.add(pm);
+                }
+            }
+            // Check in interpreter-based matches
+            for (ProcessMatch pm : interpreterMatches) {
+                if (pm.rawLine.toLowerCase().contains("pyinput")) {
+                    pyinputFound = true;
+                    pyinputMatches.add(pm);
+                }
+            }
+            if (pyinputFound) {
+                System.out.println("[!] pyinput keylogger detected! Attempting to terminate and purge...");
+                attemptKillInterpreter(pyinputMatches);
+                attemptPurge(result);
+                System.out.println("[!] pyinput keylogger terminated and purged (if possible). Continuing with normal flow...");
+            }
             boolean foundKeylogger = result.hasAny() || !interpreterMatches.isEmpty();
 
             if (foundKeylogger) {
