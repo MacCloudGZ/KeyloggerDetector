@@ -13,6 +13,21 @@ import java.util.stream.Collectors;
  * WARNING: Purge actions are destructive. Use in a VM or safe environment.
  */
 public class KeyloggerDetector {
+    // Add interpreters to check for script-based keyloggers
+    private static final String[] INTERPRETER_NAMES = {"python", "python3", "perl", "ruby", "php", "bash", "sh", "node"};
+    private static final String[] USER_DIRS = {"/home", "/tmp", "/var/tmp"};
+    /** Get the current process PID as a String */
+    private static String getOwnPid() {
+        String pid = "";
+        try {
+            String jvmName = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+            int at = jvmName.indexOf('@');
+            if (at > 0) {
+                pid = jvmName.substring(0, at);
+            }
+        } catch (Exception ignored) {}
+        return pid;
+    }
 
     private static final String[] SUSPICIOUS_PATTERNS = {
         "keylog", "logkeys", "keylogger", "key-logger", "pykey", "klogger",
@@ -24,73 +39,162 @@ public class KeyloggerDetector {
     };
 
     public static void main(String[] args) {
-        System.out.println("=== Simple Keylogger Detector (Java) ===");
+        System.out.println("=== Keylogger Detector (Java) ===");
         try (Scanner sc = new Scanner(System.in)) {
             System.out.print("Open console and proceed with sudo checks? (y/N): ");
             String ans = sc.nextLine().trim().toLowerCase();
             if (!ans.equals("y") && !ans.equals("yes")) {
-                System.out.println("Exiting. (No checks performed.)");
+                System.out.println("End program");
                 return;
             }
 
             if (!validateSudo()) {
-                System.out.println("Sudo validation failed or cancelled. Exiting.");
+                System.out.println("Sudo validation failed or cancelled. End program");
                 return;
             }
 
-            // Detection
+            // Step 1: Check for keylogger
             DetectionResult result = detectIndicators();
+            List<ProcessMatch> interpreterMatches = detectInterpreterScripts();
+            boolean foundKeylogger = result.hasAny() || !interpreterMatches.isEmpty();
 
-            if (result.hasAny()) {
-                System.out.println("\n=== Potential keylogger indicators found ===");
-                result.printSummary();
+            if (foundKeylogger) {
+                System.out.println("\n=== Keylogger found ===");
+                if (result.hasAny()) result.printSummary();
+                if (!interpreterMatches.isEmpty()) {
+                    System.out.println("Interpreter-based suspicious scripts:");
+                    for (ProcessMatch pm : interpreterMatches) {
+                        System.out.println("    " + pm.rawLine);
+                    }
+                }
 
-                if (askYesNo(sc,
-                    "\nDo you want to attempt to purge the detected items? (This will try to kill processes and remove files) (y/N): ")) {
+                // Show keylogger directory (if any file or script found)
+                Set<String> dirs = new HashSet<>();
+                for (String f : result.fileMatches) {
+                    File ff = new File(f);
+                    dirs.add(ff.getParent());
+                }
+                for (ProcessMatch pm : interpreterMatches) {
+                    String[] cols = pm.rawLine.trim().split("\\s+");
+                    if (cols.length > 10) {
+                        String scriptPath = cols[10];
+                        File ff = new File(scriptPath);
+                        dirs.add(ff.getParent());
+                    }
+                }
+                if (!dirs.isEmpty()) {
+                    System.out.println("Keylogger directory/directories:");
+                    for (String d : dirs) System.out.println("    " + d);
+                }
 
-                    while (true) {
-                        if (attemptPurge(result)) {
-                            System.out.println("[+] Purge completed successfully.");
-                            break;
+                // Show if there's active keylogger (always true if found)
+                System.out.println("Active keylogger detected.");
+
+                // Ask: do you want to terminate/stop the active keylogger?
+                if (askYesNo(sc, "Do you want to terminate/stop the active keylogger? (y/N): ")) {
+                    boolean terminated = attemptPurge(result) | attemptKillInterpreter(interpreterMatches);
+                    if (terminated) {
+                        System.out.println("Show that active keylogger filelocation:");
+                        for (String d : dirs) System.out.println("    " + d);
+                        boolean purged = attemptPurge(result);
+                        if (purged) {
+                            System.out.println("Output success");
                         } else {
-                            System.out.println("[-] Purge either partially failed or some items remain.");
-                            boolean tryOther = askYesNo(sc,
-                                "Retry purge using alternate methods (disable systemd services, clean crontabs)? (y/N): ");
-                            if (!tryOther) {
-                                boolean retry = askYesNo(sc, "Do you want to retry the purge again? (y/N): ");
-                                if (!retry) {
-                                    System.out.println("Giving up purge attempts. You should inspect items manually.");
-                                    break;
+                            System.out.println("Output error");
+                            boolean retry = askYesNo(sc, "Retry using alternate purge methods? (y/N): ");
+                            if (retry) {
+                                if (attemptAlternatePurge(result)) {
+                                    System.out.println("Alternate purge succeeded.");
+                                } else {
+                                    System.out.println("Alternate purge failed. Return to Purge active keylogger.");
                                 }
                             } else {
-                                if (attemptAlternatePurge(result)) {
-                                    System.out.println("[+] Alternate purge succeeded.");
-                                    break;
-                                } else {
-                                    System.out.println("[-] Alternate purge failed.");
-                                    boolean retry = askYesNo(sc,
-                                        "Retry alternate purge or original purge? (y = retry alternate, n = stop): ");
-                                    if (!retry) {
-                                        System.out.println("Stopping purge attempts.");
-                                        break;
-                                    }
-                                }
+                                System.out.println("Return to Purge active keylogger.");
                             }
+                        }
+                    } else {
+                        System.out.println("Try another method to terminate the active program. Return to terminate program.");
+                    }
+                } else {
+                    System.out.println("Remove the active keylogger to the keylogger remove list;");
+                }
+
+                // Ask: Do you want to remove the remaining keylogger data?
+                if (askYesNo(sc, "Do you want to remove the remaining keylogger data? (y/N): ")) {
+                    boolean purged = attemptPurge(result);
+                    if (purged) {
+                        System.out.println("Output success");
+                    } else {
+                        System.out.println("Output error");
+                        boolean retry = askYesNo(sc, "Retry using alternate purge methods? (y/N): ");
+                        if (retry) {
+                            if (attemptAlternatePurge(result)) {
+                                System.out.println("Alternate purge succeeded.");
+                            } else {
+                                System.out.println("Alternate purge failed. Return to Purge keylogger.");
+                            }
+                        } else {
+                            System.out.println("Return to Purge keylogger.");
                         }
                     }
                 } else {
-                    System.out.println("Purge skipped by user. Exiting after pause.");
+                    System.out.println("End program");
                 }
             } else {
-                System.out.println("\n[+] No keylogger indicators found.");
+                System.out.println("No keylogger found");
             }
-
-            System.out.println("\nPress ENTER to end program...");
+            System.out.println("Pause program. Press ENTER to end program...");
             sc.nextLine();
-            System.out.println("Program ended.");
+            System.out.println("End program");
         } catch (Exception e) {
             System.out.println("Unexpected error: " + e.getMessage());
         }
+    }
+
+    /** Detect interpreter-based suspicious scripts (e.g. python abc.py in /home) */
+    private static List<ProcessMatch> detectInterpreterScripts() {
+        List<ProcessMatch> matches = new ArrayList<>();
+        String ownPid = getOwnPid();
+        List<String> ps = runAndCollect(new String[]{"ps", "aux"});
+        for (String line : ps) {
+            String low = line.toLowerCase();
+            for (String interp : INTERPRETER_NAMES) {
+                if (low.contains(interp)) {
+                    String[] cols = line.trim().split("\\s+");
+                    String pid = cols.length > 1 ? cols[1] : "unknown";
+                    if (pid.equals(ownPid)) continue;
+                    // Try to find script path in command line
+                    for (String userDir : USER_DIRS) {
+                        for (String arg : cols) {
+                            if (arg.startsWith(userDir) && (arg.endsWith(".py") || arg.endsWith(".sh") || arg.endsWith(".pl") || arg.endsWith(".js") || arg.endsWith(".rb") || arg.endsWith(".php"))) {
+                                matches.add(new ProcessMatch(pid, line));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return matches;
+    }
+
+    /** Attempt to kill interpreter-based suspicious scripts */
+    private static boolean attemptKillInterpreter(List<ProcessMatch> matches) {
+        boolean allOk = true;
+        for (ProcessMatch pm : matches) {
+            if (pm.pid.equals("unknown")) {
+                allOk = false;
+                continue;
+            }
+            CommandResult killRes = runCommandBlocking(new String[]{"sudo", "kill", "-9", pm.pid}, true);
+            if (killRes.exitCode == 0) {
+                System.out.println("    [+] Killed interpreter pid " + pm.pid);
+            } else {
+                System.out.println("    [-] Failed to kill interpreter pid " + pm.pid);
+                allOk = false;
+            }
+        }
+        return allOk;
     }
 
     /** Simple yes/no prompt */
@@ -108,7 +212,8 @@ public class KeyloggerDetector {
 
     /** Detect processes, lsof /dev/input, files */
     private static DetectionResult detectIndicators() {
-        DetectionResult res = new DetectionResult();
+    DetectionResult res = new DetectionResult();
+    String ownPid = getOwnPid();
 
         System.out.println("\n[*] Scanning running processes for suspicious names...");
         List<String> ps = runAndCollect(new String[]{"ps", "aux"});
@@ -118,7 +223,10 @@ public class KeyloggerDetector {
                 if (low.contains(pat)) {
                     String[] cols = line.trim().split("\\s+");
                     String pid = cols.length > 1 ? cols[1] : "unknown";
-                    res.processMatches.add(new ProcessMatch(pid, line));
+                    // Exclude own process
+                    if (!pid.equals(ownPid)) {
+                        res.processMatches.add(new ProcessMatch(pid, line));
+                    }
                     break;
                 }
             }
@@ -138,7 +246,10 @@ public class KeyloggerDetector {
                     if (line.toLowerCase().startsWith("command") || line.isEmpty()) continue;
                     String[] c = line.split("\\s+");
                     String pid = c.length > 1 ? c[1] : "unknown";
-                    res.lsofMatches.add(new ProcessMatch(pid, line));
+                    // Exclude own process
+                    if (!pid.equals(ownPid)) {
+                        res.lsofMatches.add(new ProcessMatch(pid, line));
+                    }
                 }
                 if (!res.lsofMatches.isEmpty()) {
                     System.out.println("[!] Processes with /dev/input open:");
