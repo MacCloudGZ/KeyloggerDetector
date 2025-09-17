@@ -12,7 +12,9 @@ import java.util.stream.Collectors;
  *
  * WARNING: Purge actions are destructive. Use in a VM or safe environment.
  */
-public class KeyloggerDetector {
+public class KDetector {
+    // Set to true to enable debug output
+    private static final boolean DEBUGGING = false;
     // Add interpreters to check for script-based keyloggers
     private static final String[] INTERPRETER_NAMES = {"python", "python3", "perl", "ruby", "php", "bash", "sh", "node"};
     private static final String[] USER_DIRS = {"/home", "/tmp", "/var/tmp"};
@@ -56,16 +58,15 @@ public class KeyloggerDetector {
             // Step 1: Check for keylogger
             DetectionResult result = detectIndicators();
             List<ProcessMatch> interpreterMatches = detectInterpreterScripts();
+            // Debug note: print if any process is using python pyinput
+            for (ProcessMatch pm : interpreterMatches) {
+                if (pm.rawLine.toLowerCase().contains("python") && pm.rawLine.toLowerCase().contains("pyinput")) {
+                    if(DEBUGGING) System.out.println("[DEBUG] Found interpreter-based pyinput process: " + pm.rawLine);
+                }
+            }
             // Check for 'pyinput' process and auto-kill/purge if found
             boolean pyinputFound = false;
             List<ProcessMatch> pyinputMatches = new ArrayList<>();
-            // Check in suspicious process matches
-            for (ProcessMatch pm : result.processMatches) {
-                if (pm.rawLine.toLowerCase().contains("pyinput")) {
-                    pyinputFound = true;
-                    pyinputMatches.add(pm);
-                }
-            }
             // Check in interpreter-based matches
             for (ProcessMatch pm : interpreterMatches) {
                 if (pm.rawLine.toLowerCase().contains("pyinput")) {
@@ -78,6 +79,8 @@ public class KeyloggerDetector {
                 attemptKillInterpreter(pyinputMatches);
                 attemptPurge(result);
                 System.out.println("[!] pyinput keylogger terminated and purged (if possible). Continuing with normal flow...");
+            } else if (DEBUGGING) {
+                System.out.println("[DEBUG] No active pyinput process detected.");
             }
             boolean foundKeylogger = result.hasAny() || !interpreterMatches.isEmpty();
 
@@ -264,6 +267,12 @@ public class KeyloggerDetector {
         } else {
             CommandResult lsofOut = runCommandBlocking(new String[]{"sudo", "lsof", "/dev/input"}, true);
             if (lsofOut.exitCode == 0 && !lsofOut.stdoutLines.isEmpty()) {
+                if (DEBUGGING) {
+                    System.out.println("[DEBUG] Raw lsof output:");
+                    for (String l : lsofOut.stdoutLines) {
+                        System.out.println("[DEBUG] " + l);
+                    }
+                }
                 for (String l : lsofOut.stdoutLines) {
                     String line = l.trim();
                     if (line.toLowerCase().startsWith("command") || line.isEmpty()) continue;
