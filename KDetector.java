@@ -265,7 +265,7 @@ public class KDetector {
         if (!isInstalled("lsof")) {
             System.out.println("    lsof not found. Skipping /dev/input check. Install lsof to enable this check.");
         } else {
-            CommandResult lsofOut = runCommandBlocking(new String[]{"sudo", "lsof", "/dev/input"}, true);
+            CommandResult lsofOut = runCommandBlocking(new String[]{"sudo", "lsof", "/dev/input"}, false);
             if (DEBUGGING) {
                 System.out.println("[DEBUG] Raw lsof output:");
                 if (lsofOut.stdoutLines.isEmpty()) {

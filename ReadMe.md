@@ -6,8 +6,11 @@ Best used in a **virtual machine** (VM) for safety and testing.
 
 ---
 
+## Current Version 1.0.0
 
-## Features
+---
+- ✅ Debug mode: By default, `DEBUGGING = false` in the code. Set it to `true` if you want to print raw `lsof` output and extra detection info for troubleshooting.
+- ✅ Debug mode: Set `DEBUGGING = true` in the code to print raw `lsof` output and extra detection info for troubleshooting
 - ✅ Asks for sudo permission before scanning
 - ✅ Detects suspicious **processes** by name patterns
 - ✅ Detects **interpreter-based keyloggers** (e.g., Python, Bash, Node.js scripts) running from user directories, even with generic filenames
@@ -103,7 +106,15 @@ You will be prompted whether to proceed. If you confirm, the program will run `s
 ---
 
 
-## Output & What to look for
+
+## Debugging & Troubleshooting
+
+* If `/dev/input` detection does not show expected processes (even when a test script is running), try enabling debug mode by setting `DEBUGGING = true` in the code. This will print all raw `lsof` output.
+* If you still do not see the process, try running `sudo lsof /dev/input` manually in a terminal while your test script is running. If the process does not appear, it may be due to:
+    - The script not holding the device open long enough
+    - Kernel or VM security restrictions
+    - Device permissions or virtualization issues
+* The detector will only report what `lsof` returns. If `lsof` does not show the process, the detector cannot see it either.
 
 * **Processes:** Lines printed from `ps aux` that match suspicious name patterns (e.g., `keylog`, `keylogger`, `logkeys`, etc.).
 * **Interpreter-based scripts:** Any process running a script (e.g., `.py`, `.sh`, `.js`, etc.) from user directories (like `/home`, `/tmp`, `/var/tmp`), regardless of the script's filename. This helps catch disguised or generically-named keyloggers.
@@ -115,7 +126,9 @@ If any indicators are found, the program prints them and summarizes at the end, 
 ---
 
 
-## Limitations & Safety Notes
+
+* In some virtual machines or with certain Linux security settings, `/dev/input` device monitoring may not work as expected. This is a system/VM limitation, not a bug in the detector.
+* The debug mode can help you verify what the detector is actually seeing from system tools.
 
 * This is a **heuristic** scanner. It will produce false positives and cannot find every keylogger (especially kernel-level rootkits or highly stealthy malware).
 * Interpreter/script-based detection will flag any script running from user directories, even if the filename is generic (e.g., `abc.py`). This may include legitimate scripts, so review findings before purging.
