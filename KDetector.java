@@ -266,13 +266,17 @@ public class KDetector {
             System.out.println("    lsof not found. Skipping /dev/input check. Install lsof to enable this check.");
         } else {
             CommandResult lsofOut = runCommandBlocking(new String[]{"sudo", "lsof", "/dev/input"}, true);
-            if (lsofOut.exitCode == 0 && !lsofOut.stdoutLines.isEmpty()) {
-                if (DEBUGGING) {
-                    System.out.println("[DEBUG] Raw lsof output:");
+            if (DEBUGGING) {
+                System.out.println("[DEBUG] Raw lsof output:");
+                if (lsofOut.stdoutLines.isEmpty()) {
+                    System.out.println("[DEBUG] (no output)");
+                } else {
                     for (String l : lsofOut.stdoutLines) {
                         System.out.println("[DEBUG] " + l);
                     }
                 }
+            }
+            if (lsofOut.exitCode == 0 && !lsofOut.stdoutLines.isEmpty()) {
                 for (String l : lsofOut.stdoutLines) {
                     String line = l.trim();
                     if (line.toLowerCase().startsWith("command") || line.isEmpty()) continue;
